@@ -1,3 +1,5 @@
+import re
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -11,17 +13,27 @@ CORS(app)
 # - You are free to use additional data structures in your solution
 # - You must define and tell your tutor one edge case you have devised and how you have addressed this
 
+def is_valid_mark(mark):
+    """
+    Checks if mark is within in 0-100 range
+    """
+    return isinstance(mark, (int, float)) and not isinstance(mark, bool) and 0 <= mark <= 100
+
+
+def is_valid_course(course):
+    """
+    Checks if course code has a valid shape
+    """
+    return isinstance(course, str) and re.fullmatch(r"[A-Z]{4}\d{4}", course) is not None
+
+
 @app.route("/students")
 def get_students():
     """
     Route to fetch all students from the database
     return: Array of student objects
     """
-    # TODO: replace with your implementation. This is a mock response
-    return jsonify([
-        {'course': 'COMP1531', 'id': 1, 'mark': 85, 'name': 'Alice Zhang'},
-        {'course': 'COMP1531', 'id': 2, 'mark': 72, 'name': 'Bob Smith'}
-    ]), 200
+    return jsonify(db.get_all_students()), 200
 
 
 @app.route("/students", methods=["POST"])
@@ -33,11 +45,23 @@ def create_student():
     param mark: The mark the student received (from request body)
     return: The created student if successful
     """
+    student_data = request.json or {}
 
-    # Getting the request body - replace with your implementation
-    student_data = request.json
+    name = student_data.get("name")
+    course = student_data.get("course")
+    mark = student_data.get("mark", 0)
 
-    pass
+    if not isinstance(name, str) or not name.strip():
+        return jsonify({"error": "name must be a non-empty string"}), 404
+
+    if not is_valid_course(course):
+        return jsonify({"error": "course must be 4 letters followed by 4 digits"}), 404
+
+    if not is_valid_mark(mark):
+        return jsonify({"error": "mark must be a number between 0 and 100"}), 404
+
+    student = db.insert_student(name, course, mark)
+    return jsonify(student), 200
 
 
 @app.route("/students/<int:student_id>", methods=["PUT"])
@@ -49,7 +73,30 @@ def update_student(student_id):
     param mark: The mark the student received (from request body)
     return: The updated student if successful
     """
-    pass  # replace with your implementation
+    student_data = request.json or {}
+
+    name = student_data.get("name")
+    course = student_data.get("course")
+    mark = student_data.get("mark")
+
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        return jsonify({"error": "name must be a non-empty string"}), 404
+
+    if course is not None and not is_valid_course(course):
+        return jsonify({"error": "course must be 4 letters followed by 4 digits"}), 404
+
+    if mark is not None and not is_valid_mark(mark):
+        return jsonify({"error": "mark must be a number between 0 and 100"}), 404
+
+    student = db.update_student(
+        student_id,
+        name=name,
+        course=course,
+        mark=mark,
+    )
+    if student is None:
+        return jsonify({"error": "student not found"}), 404
+    return jsonify(student), 200
 
 
 @app.route("/students/<int:student_id>", methods=["DELETE"])
@@ -58,7 +105,10 @@ def delete_student(student_id):
     Route to delete student by id
     return: The deleted student
     """
-    pass  # replace with your implementation
+    student = db.delete_student(student_id)
+    if student is None:
+        return jsonify({"error": "student not found"}), 404
+    return jsonify(student), 200
 
 
 @app.route("/stats")
@@ -67,7 +117,17 @@ def get_stats():
     Route to show the stats of all student marks 
     return: An object with the stats (count, average, min, max)
     """
-    pass  # replace with your implementation
+    marks = [s["mark"] for s in db.get_all_students()]
+
+    if not marks:
+        return jsonify({"count": 0, "average": 0, "min": 0, "max": 0}), 200
+
+    return jsonify({
+        "count": len(marks),
+        "average": sum(marks) / len(marks),
+        "min": min(marks),
+        "max": max(marks),
+    }), 200
 
 
 @app.route("/")
